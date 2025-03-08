@@ -23,4 +23,37 @@ body {
     font-size: 24px;
     pointer-events: none;
     user-select: none;
+}
+
+#instructions {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 20px;
+    border-radius: 10px;
+    pointer-events: none;
+    user-select: none;
+}
+
+#instructions.hidden {
+    display: none;
+}
+
+#score {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 24px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 20px;
+    border-radius: 5px;
+    pointer-events: none;
+    user-select: none;
 } 
