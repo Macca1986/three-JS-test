@@ -91,33 +91,70 @@ class Game {
     }
 
     setupPlayer() {
-        // Create player body
-        const playerGeometry = new THREE.BoxGeometry(1, 1, 0.1);
-        const playerMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x00ff00,
-            emissive: 0x00ff00,
-            emissiveIntensity: 1,
-            metalness: 0.5,
-            roughness: 0.5
-        });
-        this.player = new THREE.Mesh(playerGeometry, playerMaterial);
-        // Set spawn position in the bottom-right room
+        // Create player group to hold all parts
+        this.player = new THREE.Group();
         this.player.position.set(7, 0.1, -7);
-        this.player.castShadow = true;
-        this.scene.add(this.player);
+        
+        // Create body (slightly rounded rectangle)
+        const bodyGeometry = new THREE.BoxGeometry(0.6, 0.1, 0.4);
+        const bodyMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3366cc,  // Blue color for the "uniform"
+            metalness: 0.3,
+            roughness: 0.7
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        this.player.add(body);
+
+        // Create head (circle)
+        const headGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16);
+        const headMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xffdbac,  // Skin tone
+            metalness: 0.3,
+            roughness: 0.7
+        });
+        const head = new THREE.Mesh(headGeometry, headMaterial);
+        head.position.z = -0.25; // Place head at the "top" of the body
+        this.player.add(head);
+
+        // Create arms (two rectangles)
+        const armGeometry = new THREE.BoxGeometry(0.2, 0.1, 0.15);
+        const armMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3366cc,  // Same as body
+            metalness: 0.3,
+            roughness: 0.7
+        });
+        
+        // Left arm
+        const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+        leftArm.position.set(-0.4, 0, 0);
+        this.player.add(leftArm);
+        
+        // Right arm (this will hold the weapon)
+        const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+        rightArm.position.set(0.4, 0, 0);
+        this.player.add(rightArm);
 
         // Create weapon
-        const weaponGeometry = new THREE.BoxGeometry(0.2, 0.8, 0.1);
+        const weaponGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
         const weaponMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x444444,
-            emissive: 0x222222,
-            emissiveIntensity: 0.5
+            metalness: 0.8,
+            roughness: 0.2
         });
         this.weapon = new THREE.Mesh(weaponGeometry, weaponMaterial);
-        this.weapon.position.set(0, 0, 0);
-        this.player.add(this.weapon);
+        this.weapon.position.set(0.15, 0, 0.2); // Position relative to right arm
+        rightArm.add(this.weapon);
 
-        // Create laser pointer with two segments
+        // Add shadow casting to all parts
+        this.player.traverse((object) => {
+            if (object.isMesh) {
+                object.castShadow = true;
+            }
+        });
+        
+        this.scene.add(this.player);
+
+        // Create laser pointer
         const laserGeometry = new THREE.BufferGeometry();
         const laserMaterial = new THREE.LineBasicMaterial({ 
             color: 0xff0000,
@@ -543,17 +580,68 @@ class Game {
         
         // Update laser pointer
         const laserStart = this.player.position.clone();
-        
-        // Calculate the laser end point by extending beyond the mouse position
         const laserDirection = toMouse.normalize();
-        const laserEnd = laserStart.clone().add(laserDirection.multiplyScalar(40)); // Extend well beyond mouse position
         
-        const laserPoints = new Float32Array([
-            laserStart.x, 0.1, laserStart.z,
-            this.mousePosition.x, 0.1, this.mousePosition.z,  // First segment ends at mouse position
-            this.mousePosition.x, 0.1, this.mousePosition.z,  // Second segment starts at mouse position
-            laserEnd.x, 0.1, laserEnd.z                      // Extend beyond mouse position
-        ]);
+        // Find the closest wall intersection
+        let closestIntersection = null;
+        let minDistance = Infinity;
+        const rayStart = new THREE.Vector2(laserStart.x, laserStart.z);
+        
+        // Extend the ray in the correct direction
+        const rayEnd = new THREE.Vector2(
+            rayStart.x + laserDirection.x * 100,
+            rayStart.z + laserDirection.z * 100  // Fixed: using z component instead of y
+        );
+        
+        for (const wall of this.walls) {
+            const wallStart = wall.userData.start;
+            const wallEnd = wall.userData.end;
+            
+            const intersection = this.lineIntersection(
+                rayStart, rayEnd,
+                wallStart, wallEnd
+            );
+            
+            if (intersection) {
+                // Calculate actual intersection point
+                const t = ((wallStart.x - rayStart.x) * (wallStart.y - wallEnd.y) - 
+                          (wallStart.y - rayStart.y) * (wallStart.x - wallEnd.x)) /
+                         ((rayStart.x - rayEnd.x) * (wallStart.y - wallEnd.y) - 
+                          (rayStart.y - rayEnd.y) * (wallStart.x - wallEnd.x));
+                
+                const intersectionPoint = new THREE.Vector2(
+                    rayStart.x + t * (rayEnd.x - rayStart.x),
+                    rayStart.y + t * (rayEnd.y - rayStart.y)
+                );
+                
+                const distance = rayStart.distanceTo(intersectionPoint);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestIntersection = intersectionPoint;
+                }
+            }
+        }
+        
+        // Create laser points array
+        let laserPoints;
+        if (closestIntersection) {
+            // If there's a wall intersection, stop the laser there
+            laserPoints = new Float32Array([
+                laserStart.x, 0.1, laserStart.z,
+                closestIntersection.x, 0.1, closestIntersection.y
+            ]);
+        } else {
+            // If no wall intersection, extend laser far in the aim direction
+            const laserEnd = new THREE.Vector3(
+                laserStart.x + laserDirection.x * 100,
+                0.1,
+                laserStart.z + laserDirection.z * 100  // Fixed: using z component instead of y
+            );
+            laserPoints = new Float32Array([
+                laserStart.x, 0.1, laserStart.z,
+                laserEnd.x, 0.1, laserEnd.z
+            ]);
+        }
         
         // Update laser geometry
         this.laser.geometry.setAttribute('position', new THREE.BufferAttribute(laserPoints, 3));
